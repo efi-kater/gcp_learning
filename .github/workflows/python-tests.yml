@@ -25,11 +25,17 @@ jobs:
         pip install -r requirements.txt
         pip install pytest pytest-cov
 
-    - name: Run tests with pytest
+    - name: Run tests with HTML report
       run: |
-        pytest --cov=. --cov-report=xml
+        pytest --cov=. --cov-report=xml --html=report.html --self-contained-html
       env:
         CI: "true"
+
+    - name: Upload HTML report
+      uses: actions/upload-artifact@v4
+      with:
+        name: html-test-report
+        path: report.html
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
