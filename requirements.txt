@@ -1,1 +1,5 @@
- includes pytest, pytest-html
+pytest
+pytest-html
+pytest-cov
+python-dotenv
+requests
