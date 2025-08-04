@@ -1,6 +1,7 @@
 import subprocess
 import time
 import pytest
+import os
 
 
 def run_kubectl(command):
@@ -37,7 +38,7 @@ def restart_nginx_pod():
     run_kubectl(f"wait --for=condition=Ready pod/{new_pod} --timeout=60s")
     return new_pod
 
-
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="K8s tests disabled in CI")
 def test_nginx_logs_after_restart(restart_nginx_pod):
     """Test that nginx restarts cleanly and logs expected output."""
     logs = run_kubectl(f"logs {restart_nginx_pod}")
