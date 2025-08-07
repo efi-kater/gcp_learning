@@ -27,7 +27,7 @@ jobs:
 
     - name: Run tests with HTML report
       run: |
-        pytest --cov=. --cov-report=xml --html=report.html --self-contained-html
+        pytest tests/ --html=reports/report.html --self-contained-html
       env:
         CI: "true"
 
@@ -35,7 +35,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: html-test-report
-        path: report.html
+        path: reports/report.html
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
