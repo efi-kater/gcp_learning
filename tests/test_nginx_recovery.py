@@ -2,6 +2,7 @@ import subprocess
 import time
 import pytest
 import os
+import json
 
 
 def run_kubectl(command):
@@ -38,6 +39,24 @@ def restart_nginx_pod():
     run_kubectl(f"wait --for=condition=Ready pod/{new_pod} --timeout=60s")
     return new_pod
 
+
+@pytest.fixture
+def create_pod_with_app_mode_env_vars():
+    # Setup: create the pod
+    run_kubectl("create deployment hello-app --image=gcr.io/google-samples/hello-app:1.0")
+    run_kubectl("set env deployment/hello-app APP_MODE=qa ENV=CLOUD")
+    run_kubectl("expose deployment hello-app --port=8080 --type=LoadBalancer")
+    time.sleep(10)
+    pod = run_kubectl("get pod -l app=hello-app -o jsonpath={.items[0].metadata.name}")
+
+    yield pod  # <-- control passes to the test here
+
+    # Teardown: runs AFTER the test finishes
+    run_kubectl("delete service hello-app")
+    run_kubectl("delete deployment hello-app")
+
+
+
 @pytest.mark.skipif(os.getenv("CI") == "true", reason="K8s tests disabled in CI")
 def test_nginx_logs_after_restart(restart_nginx_pod):
     """Test that nginx restarts cleanly and logs expected output."""
@@ -46,3 +65,17 @@ def test_nginx_logs_after_restart(restart_nginx_pod):
     assert "start worker process" in logs, "Expected log entry not found"
     assert "nginx" in logs.lower(), "Nginx not mentioned in logs"
     assert "error" not in logs.lower(), "Unexpected error found in logs"
+
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="K8s tests disabled in CI")
+def test_create_deployment(create_pod_with_app_mode_env_vars):
+    """Test env vars using pod spec JSON instead of exec."""
+    raw = run_kubectl(f"get pod {create_pod_with_app_mode_env_vars} -o json")
+    pod_json = json.loads(raw)
+
+    env_list = pod_json["spec"]["containers"][0].get("env", [])
+    env_dict = {item["name"]: item["value"] for item in env_list}
+
+    assert env_dict.get("APP_MODE") == "qa", "APP_MODE not set to 'qa'"
+    assert env_dict.get("ENV") == "CLOUD", "ENV not set to 'CLOUD'"
+
+
