@@ -115,6 +115,7 @@ def cleanup_resources():
 def main():
     parser = argparse.ArgumentParser(description="Sanity check tool for Kubernetes test environments.")
     parser.add_argument("--cleanup", action="store_true", help="Delete all pods and services after checks")
+    parser.add_argument('--app', type=str, help='Name of the app to check')
     args = parser.parse_args()
 
     print("\n=== Running Sanity Checks ===")
