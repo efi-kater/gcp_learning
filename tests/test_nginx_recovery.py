@@ -57,7 +57,7 @@ def create_pod_with_app_mode_env_vars():
 
 
 
-@pytest.mark.skipif(os.getenv("CI") == "true", reason="K8s tests disabled in CI")
+#@pytest.mark.skipif(os.getenv("CI") == "true", reason="K8s tests disabled in CI")
 def test_nginx_logs_after_restart(restart_nginx_pod):
     """Test that nginx restarts cleanly and logs expected output."""
     logs = run_kubectl(f"logs {restart_nginx_pod}")
@@ -66,7 +66,7 @@ def test_nginx_logs_after_restart(restart_nginx_pod):
     assert "nginx" in logs.lower(), "Nginx not mentioned in logs"
     assert "error" not in logs.lower(), "Unexpected error found in logs"
 
-@pytest.mark.skipif(os.getenv("CI") == "true", reason="K8s tests disabled in CI")
+#@pytest.mark.skipif(os.getenv("CI") == "true", reason="K8s tests disabled in CI")
 def test_create_deployment(create_pod_with_app_mode_env_vars):
     """Test env vars using pod spec JSON instead of exec."""
     raw = run_kubectl(f"get pod {create_pod_with_app_mode_env_vars} -o json")
