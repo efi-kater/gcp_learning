@@ -14,6 +14,20 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Authenticate to GCP
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+    - name: Set up gcloud
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ secrets.GCP_PROJECT }}
+        install_components: kubectl
+
+    - name: Get GKE credentials
+      run: gcloud container clusters get-credentials ${{ secrets.GKE_CLUSTER }} --region ${{ secrets.GCP_REGION }}
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -23,11 +37,17 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest pytest-cov
+        pip install pytest pytest-cov pytest-html
+
+    - name: Run sanity check
+      run: python cli_manual_check/run_cli_k8s_check.py --app hello-app
+      env:
+        CI: "true"
 
     - name: Run tests with HTML report
       run: |
-        pytest tests/ --html=reports/report.html --self-contained-html
+        mkdir -p reports
+        pytest tests/ --cov=. --cov-report=xml:reports/coverage.xml --html=reports/report.html --self-contained-html
       env:
         CI: "true"
 
@@ -41,4 +61,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: coverage-report
-        path: coverage.xml
+        path: reports/coverage.xml
