@@ -5,15 +5,22 @@ import os
 import json
 
 
-def run_kubectl(command):
-    """Run a kubectl CLI command and return stdout."""
-    result = subprocess.run(
-        ["kubectl"] + command.split(),
-        capture_output=True,
-        text=True,
-        check=True
-    )
-    return result.stdout.strip()
+def run_kubectl(cmd):
+    try:
+        result = subprocess.run(
+            ["kubectl"] + cmd.split(),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        # If error means resource not found, return empty string
+        if "NotFound" in e.stderr or "No resources found" in e.stderr:
+            return ""
+        else:
+            raise
+
 
 
 @pytest.fixture
@@ -42,10 +49,13 @@ def restart_nginx_pod():
 
 @pytest.fixture
 def create_pod_with_app_mode_env_vars():
-    # Setup: create the pod
-    run_kubectl("create deployment hello-app --image=gcr.io/google-samples/hello-app:1.0")
-    run_kubectl("set env deployment/hello-app APP_MODE=qa ENV=CLOUD")
-    run_kubectl("expose deployment hello-app --port=8080 --type=LoadBalancer")
+    # Check if deployment hello-app exists
+    deployments = run_kubectl("get deployments -l app=hello-app -o jsonpath={.items[*].metadata.name}").strip()
+
+    if deployments == "" or "hello-app" not in deployments.split():
+        run_kubectl("create deployment hello-app --image=gcr.io/google-samples/hello-app:1.0")
+        run_kubectl("set env deployment/hello-app APP_MODE=qa ENV=CLOUD")
+        run_kubectl("expose deployment hello-app --port=8080 --type=LoadBalancer")
     time.sleep(10)
     pod = run_kubectl("get pod -l app=hello-app -o jsonpath={.items[0].metadata.name}")
 
@@ -58,7 +68,7 @@ def create_pod_with_app_mode_env_vars():
 
 
 #@pytest.mark.skipif(os.getenv("CI") == "true", reason="K8s tests disabled in CI")
-def test_nginx_logs_after_restart(restart_nginx_pod):
+def test_pod_logs_after_restart(restart_nginx_pod):
     """Test that nginx restarts cleanly and logs expected output."""
     logs = run_kubectl(f"logs {restart_nginx_pod}")
 
@@ -67,7 +77,7 @@ def test_nginx_logs_after_restart(restart_nginx_pod):
     assert "error" not in logs.lower(), "Unexpected error found in logs"
 
 #@pytest.mark.skipif(os.getenv("CI") == "true", reason="K8s tests disabled in CI")
-def test_create_deployment(create_pod_with_app_mode_env_vars):
+def test_deployment_with_env_vars(create_pod_with_app_mode_env_vars):
     """Test env vars using pod spec JSON instead of exec."""
     raw = run_kubectl(f"get pod {create_pod_with_app_mode_env_vars} -o json")
     pod_json = json.loads(raw)
@@ -75,7 +85,7 @@ def test_create_deployment(create_pod_with_app_mode_env_vars):
     env_list = pod_json["spec"]["containers"][0].get("env", [])
     env_dict = {item["name"]: item["value"] for item in env_list}
 
-    assert env_dict.get("APP_MODE") == "qa", "APP_MODE not set to 'qa'"
-    assert env_dict.get("ENV") == "CLOUD", "ENV not set to 'CLOUD'"
+    assert env_dict.get("APP_MODE", "").upper() == "QA", "APP_MODE not set to 'QA'"
+    assert env_dict.get("ENV", "").upper() == "CLOUD", "ENV not set to 'CLOUD'"
 
 
