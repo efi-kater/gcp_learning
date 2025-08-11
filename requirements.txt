@@ -1,5 +1,7 @@
-pytest
+pytest~=8.4.1
 pytest-html
 pytest-cov
 python-dotenv
 requests
+
+kubernetes~=33.1.0
