@@ -66,14 +66,26 @@ def create_pod_with_app_mode_env_vars():
     run_kubectl("delete deployment hello-app")
 
 def update_deployment_image():
-    # Check if deployment hello-app exists
+    # update  deployment hello-app image
     run_kubectl("set image deployment/hello-app hello-app=gcr.io/google-samples/hello-app:2.0")
+    time.sleep(10)
+
+def get_pod_image(pod_json):
+    if "items" in pod_json and pod_json["items"]:
+        spec = pod_json["items"][0]["spec"]
+    else:
+        spec = pod_json["spec"]
+    return spec["containers"][0]["image"]
+
+def rollout_deployment():
+    # rollback deployment hello-app
+    run_kubectl("rollout undo deployment/hello-app")
     time.sleep(10)
 
 
 
 
-#@pytest.mark.skipif(os.getenv("CI") == "true", reason="K8s tests disabled in CI")
+
 def test_pod_logs_after_restart(restart_nginx_pod):
     """Test that nginx restarts cleanly and logs expected output."""
     logs = run_kubectl(f"logs {restart_nginx_pod}")
@@ -82,7 +94,6 @@ def test_pod_logs_after_restart(restart_nginx_pod):
     assert "nginx" in logs.lower(), "Nginx not mentioned in logs"
     assert "error" not in logs.lower(), "Unexpected error found in logs"
 
-#@pytest.mark.skipif(os.getenv("CI") == "true", reason="K8s tests disabled in CI")
 def test_deployment_with_env_vars(create_pod_with_app_mode_env_vars):
     """Test env vars using pod spec JSON instead of exec."""
     raw = run_kubectl(f"get pod {create_pod_with_app_mode_env_vars} -o json")
@@ -99,14 +110,7 @@ def test_deployment_update_image(create_pod_with_app_mode_env_vars):
     raw = run_kubectl(f"get pods {create_pod_with_app_mode_env_vars} -o json")
     pod_list = json.loads(raw)
 
-    if "items" in pod_list and pod_list["items"]:
-        # It's a PodList, get spec from the first pod in items
-        spec = pod_list["items"][0]["spec"]
-    else:
-        # It's a single Pod JSON, get spec directly
-        spec = pod_list["spec"]
-
-    image = spec["containers"][0]["image"]
+    image = get_pod_image(pod_list)
 
     #verify original image
     assert image.lower() == "gcr.io/google-samples/hello-app:1.0", \
@@ -117,22 +121,28 @@ def test_deployment_update_image(create_pod_with_app_mode_env_vars):
 
     #verify updated image
     new_raw = run_kubectl(f"get pods -l app=hello-app -o json")
-    print("RAW OUTPUT:", repr(new_raw))
     new_pod_list = json.loads(new_raw)
 
 
-    if "items" in new_pod_list and new_pod_list["items"]:
-        # It's a PodList, get spec from the first pod in items
-        spec = new_pod_list["items"][0]["spec"]
-    else:
-        # It's a single Pod JSON, get spec directly
-        spec = new_pod_list["spec"]
+    new_image = get_pod_image(new_pod_list)
 
-    new_image = spec["containers"][0]["image"]
-
-    #verify original image
+    #verify updated image
     assert new_image.lower() == "gcr.io/google-samples/hello-app:2.0", \
         f"Image is {new_image}, expected 'gcr.io/google-samples/hello-app:2.0'"
+
+    #rollback deployment
+    rollout_deployment()
+
+    #verify rollback succeed
+    rolled_raw = run_kubectl(f"get pods -l app=hello-app -o json")
+    rolled_pod_list = json.loads(rolled_raw)
+
+
+    rolled_image = get_pod_image(rolled_pod_list)
+
+    #verify rolled image
+    assert rolled_image.lower() == "gcr.io/google-samples/hello-app:1.0", \
+        f"Image is {rolled_image}, expected 'gcr.io/google-samples/hello-app:1.0'"
 
 
 
