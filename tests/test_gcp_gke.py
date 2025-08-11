@@ -65,6 +65,12 @@ def create_pod_with_app_mode_env_vars():
     run_kubectl("delete service hello-app")
     run_kubectl("delete deployment hello-app")
 
+def update_deployment_image():
+    # Check if deployment hello-app exists
+    run_kubectl("set image deployment/hello-app hello-app=gcr.io/google-samples/hello-app:2.0")
+    time.sleep(10)
+
+
 
 
 #@pytest.mark.skipif(os.getenv("CI") == "true", reason="K8s tests disabled in CI")
@@ -87,5 +93,48 @@ def test_deployment_with_env_vars(create_pod_with_app_mode_env_vars):
 
     assert env_dict.get("APP_MODE", "").upper() == "QA", "APP_MODE not set to 'QA'"
     assert env_dict.get("ENV", "").upper() == "CLOUD", "ENV not set to 'CLOUD'"
+
+def test_deployment_update_image(create_pod_with_app_mode_env_vars):
+    """Verify that the deployment's container image is the expected version."""
+    raw = run_kubectl(f"get pods {create_pod_with_app_mode_env_vars} -o json")
+    pod_list = json.loads(raw)
+
+    if "items" in pod_list and pod_list["items"]:
+        # It's a PodList, get spec from the first pod in items
+        spec = pod_list["items"][0]["spec"]
+    else:
+        # It's a single Pod JSON, get spec directly
+        spec = pod_list["spec"]
+
+    image = spec["containers"][0]["image"]
+
+    #verify original image
+    assert image.lower() == "gcr.io/google-samples/hello-app:1.0", \
+        f"Image is {image}, expected 'gcr.io/google-samples/hello-app:1.0'"
+
+    #update the image
+    update_deployment_image()
+
+    #verify updated image
+    new_raw = run_kubectl(f"get pods -l app=hello-app -o json")
+    print("RAW OUTPUT:", repr(new_raw))
+    new_pod_list = json.loads(new_raw)
+
+
+    if "items" in new_pod_list and new_pod_list["items"]:
+        # It's a PodList, get spec from the first pod in items
+        spec = new_pod_list["items"][0]["spec"]
+    else:
+        # It's a single Pod JSON, get spec directly
+        spec = new_pod_list["spec"]
+
+    new_image = spec["containers"][0]["image"]
+
+    #verify original image
+    assert new_image.lower() == "gcr.io/google-samples/hello-app:2.0", \
+        f"Image is {new_image}, expected 'gcr.io/google-samples/hello-app:2.0'"
+
+
+
 
 
