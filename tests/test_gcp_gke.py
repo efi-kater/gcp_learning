@@ -144,6 +144,21 @@ def test_deployment_update_image(create_pod_with_app_mode_env_vars):
     assert rolled_image.lower() == "gcr.io/google-samples/hello-app:1.0", \
         f"Image is {rolled_image}, expected 'gcr.io/google-samples/hello-app:1.0'"
 
+def test_pod_recreation_time(create_pod_with_app_mode_env_vars):
+    """Delete pod and ensure a new one is running within 60s."""
+    pod_name = run_kubectl('get pods -l app=hello-app -o jsonpath="{.items[0].metadata.name}"').strip()
+    run_kubectl(f"delete pod {pod_name} --force=true")
+
+    start_time = time.time()
+    while time.time() - start_time < 60:
+        pods = run_kubectl("get pods -l app=hello-app -o jsonpath={.items[0].status.phase}")
+        if pods == "Running":
+            break
+        time.sleep(2)
+    else:
+        pytest.fail("New pod did not reach Running state within 60 seconds")
+
+
 
 
 
