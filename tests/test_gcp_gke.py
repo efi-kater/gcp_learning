@@ -1,9 +1,11 @@
 import subprocess
 import time
 import pytest
-import os
 import json
+from kubernetes import client, config
 
+config.load_kube_config()
+v1 = client.CoreV1Api()
 
 def run_kubectl(cmd):
     try:
@@ -57,9 +59,11 @@ def create_pod_with_app_mode_env_vars():
         run_kubectl("set env deployment/hello-app APP_MODE=qa ENV=CLOUD")
         run_kubectl("expose deployment hello-app --port=8080 --type=LoadBalancer")
     time.sleep(10)
-    pod = run_kubectl("get pod -l app=hello-app -o jsonpath={.items[0].metadata.name}")
+    wait_deploy_ready("hello-app", 60)
+    pods = wait_pod_count("app=hello-app", expected=1, timeout_s=60)
+    pod_name = pods[0]["metadata"]["name"]
 
-    yield pod  # <-- control passes to the test here
+    yield pod_name  # <-- control passes to the test here
 
     # Teardown: runs AFTER the test finishes
     run_kubectl("delete service hello-app")
@@ -81,6 +85,21 @@ def rollout_deployment():
     # rollback deployment hello-app
     run_kubectl("rollout undo deployment/hello-app")
     time.sleep(10)
+
+def wait_deploy_ready(name: str, timeout_s: int = 180):
+    run_kubectl(f"rollout status deployment/{name} --timeout={timeout_s}s")
+
+def wait_pod_count(label: str, expected: int, timeout_s: int = 120) -> list[dict]:
+    """Poll until number of pods with label == expected; returns pod list JSON items."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        data = json.loads(run_kubectl(f"get pods -l {label} -o json"))
+        items = data.get("items", [])
+        running = [i for i in items if i.get("status", {}).get("phase") == "Running"]
+        if len(running) == expected:
+            return running
+        time.sleep(2)
+    raise AssertionError(f"Timed out waiting for {expected} Running pods with label {label}")
 
 
 
@@ -157,6 +176,25 @@ def test_pod_recreation_time(create_pod_with_app_mode_env_vars):
         time.sleep(2)
     else:
         pytest.fail("New pod did not reach Running state within 60 seconds")
+
+def test_scale_up_and_down(create_pod_with_app_mode_env_vars):
+    # Baseline: ensure 1 Running pod
+    run_kubectl(f"get pod {create_pod_with_app_mode_env_vars} -o json")
+    wait_deploy_ready("hello-app", 60)
+    wait_pod_count("app=hello-app", expected=1, timeout_s=60)
+
+    # Scale up → 2
+    run_kubectl("scale deployment/hello-app --replicas=2")
+    wait_deploy_ready("hello-app", 60)
+    pods = wait_pod_count("app=hello-app", expected=2, timeout_s=60)
+    assert len(pods) == 2
+
+    # Scale down → 1
+    run_kubectl("scale deployment/hello-app --replicas=1")
+    wait_deploy_ready("hello-app", 60)
+    pods = wait_pod_count("app=hello-app", expected=1, timeout_s=60)
+    assert len(pods) == 1
+
 
 
 
