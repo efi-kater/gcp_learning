@@ -7,22 +7,30 @@ from kubernetes import client, config
 config.load_kube_config()
 v1 = client.CoreV1Api()
 
-def run_kubectl(cmd):
+
+def run_kubectl(cmd: str, output_json: bool = False):
+    """
+    Run a kubectl command and return its output.
+
+    Args:
+        cmd (str): The kubectl subcommand (e.g. "get pods -l app=hello-app -o json").
+        output_json (bool): Whether to parse output as JSON.
+
+    Returns:
+        str | dict: Raw string output or parsed JSON.
+    """
     try:
         result = subprocess.run(
             ["kubectl"] + cmd.split(),
             capture_output=True,
             text=True,
-            check=True,
+            check=True
         )
+        if output_json:
+            return json.loads(result.stdout)
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        # If error means resource not found, return empty string
-        if "NotFound" in e.stderr or "No resources found" in e.stderr:
-            return ""
-        else:
-            raise
-
+        print(e)
 
 
 @pytest.fixture
@@ -106,12 +114,15 @@ def wait_pod_count(label: str, expected: int, timeout_s: int = 120) -> list[dict
 
 
 def test_pod_logs_after_restart(restart_nginx_pod):
-    """Test that nginx restarts cleanly and logs expected output."""
-    logs = run_kubectl(f"logs {restart_nginx_pod}")
+    # Ensure the new pod is Ready (no-op if already ready)
+    run_kubectl(f"wait --for=condition=Ready pod/{restart_nginx_pod} --timeout=60s")
 
-    assert "start worker process" in logs, "Expected log entry not found"
-    assert "nginx" in logs.lower(), "Nginx not mentioned in logs"
-    assert "error" not in logs.lower(), "Unexpected error found in logs"
+    logs = run_kubectl(f"logs {restart_nginx_pod}")
+    logs_lower = logs.lower()
+
+    assert "start worker process" in logs
+    assert "nginx" in logs_lower
+    assert "error" not in logs_lower
 
 def test_deployment_with_env_vars(create_pod_with_app_mode_env_vars):
     """Test env vars using pod spec JSON instead of exec."""
